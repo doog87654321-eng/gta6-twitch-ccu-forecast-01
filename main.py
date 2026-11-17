@@ -21,7 +21,11 @@ to whatever launch history the case ships):
   3. The forecast centre is the regression prediction.  The spread is
      the empirical quantiles of that hour's regression residuals across
      the comparables, so the interval width follows the data instead of
-     a guessed random-walk sigma.
+     a guessed random-walk sigma -- but scaled by SPREAD_SCALE (0.55):
+     the residuals are heavy-tailed, so the raw tail quantiles of only
+     ~26 residuals overstate the error a fresh launch sees, and the
+     unscaled 90% band covered 91 of 92 practice hours instead of the
+     ~83 an honest band should.
   4. Comparables are restricted to launches whose research note marks
      them `Tier: comparable`.  Early-access launches (their release day
      is really day 4 of play) and weak analogues (free-to-play launches,
@@ -62,6 +66,10 @@ MIN_POINTS_ONE = 8        # comparables needed for the 1-predictor fit
 MIN_POINTS_SHAPE = 8      # comparables needed for the median-shape fallback
 MIN_DAY_HOURS = 20        # release-day hours a comparable must report
 MAX_VIEWERS = 1_000_000_000
+# Calibration for the empirical-quantile spread (see forecast_hour): the
+# raw residual quantiles overstate a new launch's error, so the deviations
+# from the centre are scaled by this factor before they become quantiles.
+SPREAD_SCALE = 0.55
 
 
 # --------------------------------------------------------------------------
@@ -298,11 +306,21 @@ def forecast_hour(hour, comparables, levels, target, p1):
         beta, residuals = fitted
         centre = beta[0] + sum(b * target[key] for b, key in zip(beta[1:], keys))
         ordered = sorted(residuals)
-        return [centre + sample_quantile(ordered, tau) for tau in levels]
+        # The residuals are heavy-tailed: a few launches deviate far more
+        # than a typical new launch does, so the raw tail quantiles of
+        # only ~26 residuals overstate the error a fresh launch will see.
+        # On the practice launches the unscaled 5%-95% band covered 91 of
+        # 92 hours (it should cover about 90%); scaling the deviations by
+        # SPREAD_SCALE brings that to 83 of 92, i.e. an honest 90% band,
+        # and the pinball loss falls on every practice launch.  The factor
+        # is one global calibration, not tuned per hour or per launch.
+        return [centre + SPREAD_SCALE * sample_quantile(ordered, tau)
+                for tau in levels]
     if len(have) >= MIN_POINTS_SHAPE:
         ratios = sorted(log_of(c["hours"][hour]) - c["log_h1"] for c in have)
         centre = log_of(p1)
-        return [centre + sample_quantile(ratios, tau) for tau in levels]
+        return [centre + SPREAD_SCALE * sample_quantile(ratios, tau)
+                for tau in levels]
     zetas = [STANDARD_Z[STANDARD_LEVELS.index(tau)] if tau in STANDARD_LEVELS
              else normal_quantile(tau) for tau in levels]
     centre = log_of(p1)
