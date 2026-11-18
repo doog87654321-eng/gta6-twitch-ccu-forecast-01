@@ -37,7 +37,22 @@ adapts to whatever launch history the case ships:
    launch at all) are excluded; if too few comparable-tier launches
    survive, the filter relaxes to every launch except the target's own
    history.
-4. **Fallbacks keep every hour valid:** fewer predictors if a fit is
+4. **Evening shrinkage.** From hour 15 the regression's slope on log
+   hour-1 has decayed to ~0.1–0.3, so for a launch much bigger than any
+   comparable its evening forecast saturates near a fixed level whatever
+   hour 1 says. Those hours' centres are therefore shrunk 25% toward
+   the comparables' median launch shape (hour 1 × the median
+   evening/hour-1 ratio), which pulls big launches' evenings up and
+   small launches' down toward the typical curve. Leave-one-case-out:
+   a weight picked on any three practice launches (0.2–0.3) improves
+   the held-out launch on three of the four, and only worsens
+   Spider-Man 2 (+0.007), whose deep trough the median shape does not
+   share — so the shrinkage applies only from hour 15, leaving the
+   well-tracked early hours to the regression alone. The spread is
+   scaled by 0.45 (after the shrinkage the centre sits closer to the
+   truth, so the honest 90% band needs less width; it still covers
+   83 of 92 practice hours).
+5. **Fallbacks keep every hour valid:** fewer predictors if a fit is
    singular or starved of points, then the comparables' median log-ratio
    shape, then the house persistence forecast. No clock, no randomness:
    the same input bytes always produce the same output bytes.
@@ -59,14 +74,14 @@ on each case's known hour-1 print. Mean pinball loss on the log scale
 
 | case | game | model | house baseline |
 | --- | --- | --- | --- |
-| p00 | Marvel's Wolverine | 0.207 | 0.744 |
-| p01 | Red Dead Redemption 2 | 0.177 | 0.287 |
-| p02 | God of War Ragnarök | 0.189 | 0.215 |
-| p03 | Marvel's Spider-Man 2 | 0.227 | 0.303 |
-| **mean** | | **0.200** | **0.387** |
+| p00 | Marvel's Wolverine | 0.128 | 0.744 |
+| p01 | Red Dead Redemption 2 | 0.126 | 0.287 |
+| p02 | God of War Ragnarök | 0.108 | 0.215 |
+| p03 | Marvel's Spider-Man 2 | 0.201 | 0.303 |
+| **mean** | | **0.141** | **0.387** |
 
-Typical median miss 19–36% (baseline 42–189%); 90% interval coverage
-0.96–1.00. Runtime ≈ 0.07 s per case, far inside the 8 s limit.
+Typical median miss 18–37% (baseline 42–189%); 90% interval coverage
+0.78–0.96 (overall 83 of 92 hours). Runtime ≈ 0.07 s per case, far inside the 8 s limit.
 
 ## Usage
 

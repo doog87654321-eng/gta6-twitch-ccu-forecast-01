@@ -21,11 +21,27 @@ to whatever launch history the case ships):
   3. The forecast centre is the regression prediction.  The spread is
      the empirical quantiles of that hour's regression residuals across
      the comparables, so the interval width follows the data instead of
-     a guessed random-walk sigma -- but scaled by SPREAD_SCALE (0.55):
+     a guessed random-walk sigma -- but scaled by SPREAD_SCALE (0.45):
      the residuals are heavy-tailed, so the raw tail quantiles of only
      ~26 residuals overstate the error a fresh launch sees, and the
      unscaled 90% band covered 91 of 92 practice hours instead of the
      ~83 an honest band should.
+  3b. Evening shrinkage (hours >= BLEND_MIN_HOUR = 15): the regression's
+     slope on log hour-1 decays from ~1.0 in the small hours to ~0.1-0.3
+     by the evening, so for a launch much bigger than any comparable its
+     evening forecast saturates near a fixed level whatever hour 1 says
+     (on a synthetic 3x/5x Ragnarok the regression alone puts the
+     evening peak at 0.37x/0.23x hour 1, below every launch in the data).
+     For those hours the centre is shrunk 25% toward the comparables'
+     median launch shape -- hour 1 times the median evening/hour-1
+     ratio -- which pulls big launches' evenings up and small launches'
+     down toward the typical curve.  Leave-one-case-out: a blend weight
+     picked on any three practice cases (0.2-0.3) improves the held-out
+     case on three of the four launches (Wolverine, Red Dead 2,
+     Ragnarok) and only worsens Spider-Man 2, whose deep trough the
+     median shape does not share; the shrinkage is therefore applied
+     only from hour 15, leaving the well-tracked early hours (slope
+     ~1.0 on hour 1) to the regression alone.
   4. Comparables are restricted to launches whose research note marks
      them `Tier: comparable`.  Early-access launches (their release day
      is really day 4 of play) and weak analogues (free-to-play launches,
@@ -69,7 +85,15 @@ MAX_VIEWERS = 1_000_000_000
 # Calibration for the empirical-quantile spread (see forecast_hour): the
 # raw residual quantiles overstate a new launch's error, so the deviations
 # from the centre are scaled by this factor before they become quantiles.
-SPREAD_SCALE = 0.55
+# 0.45 (was 0.55): after the evening shrinkage below, the centre sits
+# closer to the truth on the practice launches, so the honest 90% band
+# needs less width; at 0.45 the band still covers 83 of 92 practice
+# hours, the honest ~90%.
+SPREAD_SCALE = 0.45
+# Evening shrinkage (see docstring 3b): how far the regression centre for
+# hours >= BLEND_MIN_HOUR moves toward the median launch shape.
+BLEND_WEIGHT = 0.25
+BLEND_MIN_HOUR = 15
 
 
 # --------------------------------------------------------------------------
@@ -305,6 +329,16 @@ def forecast_hour(hour, comparables, levels, target, p1):
             continue
         beta, residuals = fitted
         centre = beta[0] + sum(b * target[key] for b, key in zip(beta[1:], keys))
+        if hour >= BLEND_MIN_HOUR and len(have) >= MIN_POINTS_SHAPE:
+            # Evening shrinkage: pull the centre toward the median launch
+            # shape (hour 1 times the median evening/hour-1 ratio).  The
+            # regression's slope on log hour-1 has decayed to ~0.1-0.3 by
+            # the evening, so its evening forecast saturates for launches
+            # bigger than any comparable; the median shape keeps the
+            # evening tied to the launch's own scale.
+            ratios = sorted(log_of(c["hours"][hour]) - c["log_h1"] for c in have)
+            shape = log_of(p1) + sample_quantile(ratios, 0.5)
+            centre = (1.0 - BLEND_WEIGHT) * centre + BLEND_WEIGHT * shape
         ordered = sorted(residuals)
         # The residuals are heavy-tailed: a few launches deviate far more
         # than a typical new launch does, so the raw tail quantiles of
